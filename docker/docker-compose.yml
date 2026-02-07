@@ -1,0 +1,55 @@
+# =============================================================================
+# Docker Compose - Development Environment
+# =============================================================================
+# Usage:
+#   docker compose up        - Start all services
+#   docker compose up app    - Start only the app
+#   docker compose down      - Stop all services
+# =============================================================================
+
+services:
+  # Main application service
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    container_name: code-navigator-app
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source for hot reload
+      - ../src:/app/src:ro
+      - ../configs:/app/configs:ro
+      # Persist data directory
+      - ../data:/app/data
+    environment:
+      - CHROMA_PERSIST_DIR=/app/data/chroma
+      - MLFLOW_TRACKING_URI=/app/data/mlruns
+      - LOG_LEVEL=DEBUG
+    env_file:
+      - ../.env
+    depends_on:
+      - chroma
+    networks:
+      - code-navigator-net
+
+  # ChromaDB vector store (standalone mode)
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: code-navigator-chroma
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    networks:
+      - code-navigator-net
+
+networks:
+  code-navigator-net:
+    driver: bridge
+
+volumes:
+  chroma-data:

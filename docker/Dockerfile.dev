@@ -1,0 +1,42 @@
+# =============================================================================
+# Dockerfile.dev - Development container for Codebase Navigator
+# =============================================================================
+# Why a dev container?
+# - Consistent environment across machines
+# - Isolate dependencies from host system
+# - Easy onboarding for new team members
+# =============================================================================
+
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast package management
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+
+# Set working directory
+WORKDIR /app
+
+# Copy project files
+COPY pyproject.toml ./
+COPY src/ ./src/
+
+# Install dependencies using uv
+RUN uv venv /app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
+RUN uv pip install -e ".[dev]"
+
+# Default command - run with hot reload
+CMD ["uvicorn", "code_navigator.api:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
