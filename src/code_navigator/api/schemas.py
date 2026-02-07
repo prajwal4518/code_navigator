@@ -100,3 +100,10 @@ class IndexResponse(BaseModel):
     status: str = Field(..., description="Indexing status")
     repo_path: str = Field(..., description="Local path to cloned repo")
     chunks_indexed: int = Field(..., description="Number of chunks indexed")
+
+
+class FlushResponse(BaseModel):
+    """Response body for /api/flush endpoint."""
+
+    status: str = Field(..., description="Flush status")
+    chunks_deleted: int = Field(..., description="Number of chunks deleted")

@@ -28,6 +28,7 @@ from .schemas import (
     ChatRequest,
     ChatResponse,
     ErrorResponse,
+    FlushResponse,
     HealthResponse,
     IndexRequest,
     IndexResponse,
@@ -265,4 +266,43 @@ async def index_repo(request: IndexRequest) -> IndexResponse:
 
     except Exception as e:
         logger.error(f"Error indexing repository: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.delete(
+    "/api/flush",
+    response_model=FlushResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+async def flush_vectordb() -> FlushResponse:
+    """Flush (clear) the vector database.
+
+    Removes all indexed code chunks from the vector store.
+    """
+    global navigator
+
+    logger.info("Flushing vector database")
+
+    try:
+        from code_navigator.vectorstore import VectorStore
+
+        store = VectorStore()
+        stats = store.get_stats()
+        chunks_before = stats["chunk_count"]
+
+        # Clear the store
+        store.clear()
+
+        # Reinitialize navigator
+        navigator = CodeNavigator()
+
+        logger.info(f"Flushed {chunks_before} chunks from vector store")
+
+        return FlushResponse(
+            status="success",
+            chunks_deleted=chunks_before,
+        )
+
+    except Exception as e:
+        logger.error(f"Error flushing vector database: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
