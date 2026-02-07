@@ -82,3 +82,21 @@ class ErrorResponse(BaseModel):
 
     error: str = Field(..., description="Error message")
     detail: str | None = Field(default=None, description="Detailed error information")
+
+
+class IndexRequest(BaseModel):
+    """Request body for /api/index endpoint."""
+
+    url: str = Field(..., description="Git repository URL to clone and index")
+    branch: str | None = Field(default=None, description="Branch to clone")
+    reset: bool = Field(
+        default=False, description="Clear existing data before indexing"
+    )
+
+
+class IndexResponse(BaseModel):
+    """Response body for /api/index endpoint."""
+
+    status: str = Field(..., description="Indexing status")
+    repo_path: str = Field(..., description="Local path to cloned repo")
+    chunks_indexed: int = Field(..., description="Number of chunks indexed")

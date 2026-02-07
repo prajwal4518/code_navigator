@@ -89,8 +89,15 @@ class HybridRetriever:
         # Get all chunks from vector store
         # We need to query with a dummy to get all documents
         # This is a workaround - ideally ChromaDB would have a get_all method
-        collection = self.vector_store._collection
-        all_data = collection.get(include=["documents", "metadatas"])
+        try:
+            collection = self.vector_store._collection
+            all_data = collection.get(include=["documents", "metadatas"])
+        except Exception as e:
+            # Collection might not exist or be stale - reinitialize
+            console.print(f"[yellow]Collection error, reinitializing: {e}[/]")
+            self.vector_store = VectorStore()
+            collection = self.vector_store._collection
+            all_data = collection.get(include=["documents", "metadatas"])
 
         if not all_data["ids"]:
             self._bm25_index = BM25Index()

@@ -103,3 +103,4 @@ Thumbs.db
 *.log
 *.tmp
 *.bak
+..bfg-report/

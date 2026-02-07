@@ -1,24 +1,40 @@
 """
-Gemini LLM client for code-related tasks.
+Provider-agnostic LLM factory using LangChain.
 
-Why Gemini?
-- Large context window (up to 1M tokens) for full codebase understanding
-- Strong code comprehension capabilities
-- Cost-effective for development
+Why LangChain?
+- Unified interface across providers (Gemini, Ollama, Anthropic, OpenAI)
+- Easy model switching via environment variables
+- Built-in streaming and async support
 
-This module provides a thin wrapper with:
-- Environment-based API key management
-- Token counting for cost awareness
-- Streaming support for real-time responses
+Supported Providers:
+- gemini: Google Gemini (requires GOOGLE_API_KEY)
+- ollama: Local Ollama (requires OLLAMA_BASE_URL)
+- anthropic: Claude (requires ANTHROPIC_API_KEY)
+- openai: GPT-4 (requires OPENAI_API_KEY)
+
+Usage:
+    >>> from code_navigator.agents.llm import get_llm
+    >>> llm = get_llm()  # Uses LLM_PROVIDER from env
+    >>> response = llm.invoke("Explain this code...")
 """
 
 import os
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 
-import google.generativeai as genai
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
 from rich.console import Console
 
 console = Console()
+
+# Default models per provider
+DEFAULT_MODELS = {
+    "gemini": "gemini-2.0-flash",
+    "ollama": "llama3.2",
+    "anthropic": "claude-3-5-sonnet-latest",
+    "openai": "gpt-4o-mini",
+}
 
 
 @dataclass
@@ -35,79 +51,190 @@ class TokenUsage:
         self.total_tokens += prompt + completion
 
 
+def _create_gemini_llm(model: str, temperature: float) -> BaseChatModel:
+    """Create a Google Gemini LLM."""
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY not set")
+
+    return ChatGoogleGenerativeAI(
+        model=model,
+        temperature=temperature,
+        google_api_key=api_key,
+    )
+
+
+def _create_ollama_llm(model: str, temperature: float) -> BaseChatModel:
+    """Create a local Ollama LLM."""
+    from langchain_ollama import ChatOllama
+
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+    return ChatOllama(
+        model=model,
+        temperature=temperature,
+        base_url=base_url,
+    )
+
+
+def _create_anthropic_llm(model: str, temperature: float) -> BaseChatModel:
+    """Create an Anthropic Claude LLM."""
+    from langchain_anthropic import ChatAnthropic
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise ValueError("ANTHROPIC_API_KEY not set")
+
+    return ChatAnthropic(
+        model=model,
+        temperature=temperature,
+        anthropic_api_key=api_key,
+    )
+
+
+def _create_openai_llm(model: str, temperature: float) -> BaseChatModel:
+    """Create an OpenAI LLM."""
+    from langchain_openai import ChatOpenAI
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not set")
+
+    return ChatOpenAI(
+        model=model,
+        temperature=temperature,
+        openai_api_key=api_key,
+    )
+
+
+def get_llm(
+    provider: str | None = None,
+    model: str | None = None,
+    temperature: float = 0.3,
+) -> BaseChatModel:
+    """Create an LLM instance based on provider configuration.
+
+    Args:
+        provider: LLM provider (gemini, ollama, anthropic, openai).
+                  Defaults to LLM_PROVIDER env var or 'gemini'.
+        model: Model name. Defaults to LLM_MODEL env var or provider default.
+        temperature: Generation temperature (0.0-1.0).
+
+    Returns:
+        A LangChain BaseChatModel instance.
+
+    Raises:
+        ValueError: If provider is not supported or required env vars missing.
+    """
+    provider = provider or os.getenv("LLM_PROVIDER", "gemini")
+    model = model or os.getenv("LLM_MODEL") or DEFAULT_MODELS.get(provider, "")
+
+    console.print(f"[dim]Using LLM: {provider}/{model}[/]")
+
+    match provider.lower():
+        case "gemini":
+            return _create_gemini_llm(model, temperature)
+        case "ollama":
+            return _create_ollama_llm(model, temperature)
+        case "anthropic":
+            return _create_anthropic_llm(model, temperature)
+        case "openai":
+            return _create_openai_llm(model, temperature)
+        case _:
+            raise ValueError(
+                f"Unknown provider: {provider}. "
+                f"Supported: gemini, ollama, anthropic, openai"
+            )
+
+
 @dataclass
-class GeminiClient:
-    """Client for Gemini API interactions.
+class LLMClient:
+    """Wrapper for LangChain LLMs with usage tracking.
+
+    Provides a consistent interface for all providers with:
+    - Token usage tracking
+    - Streaming support
+    - System prompt handling
 
     Usage:
-        >>> client = GeminiClient()
+        >>> client = LLMClient()
         >>> response = client.generate("Explain this code: ...")
         >>> print(response)
     """
 
-    model_name: str = "gemini-2.0-flash"
-    temperature: float = 0.3  # Lower for more deterministic code explanations
-    max_output_tokens: int = 2048
+    provider: str | None = None
+    model: str | None = None
+    temperature: float = 0.3
     usage: TokenUsage = field(default_factory=TokenUsage)
-    _model: genai.GenerativeModel | None = None
+    _llm: BaseChatModel | None = None
 
     def __post_init__(self):
-        """Configure the Gemini API."""
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            raise ValueError(
-                "GOOGLE_API_KEY not found in environment. "
-                "Please set it in your .env file."
-            )
-        genai.configure(api_key=api_key)
+        """Initialize the LLM."""
+        self._llm = get_llm(
+            provider=self.provider,
+            model=self.model,
+            temperature=self.temperature,
+        )
 
     @property
-    def model(self) -> genai.GenerativeModel:
-        """Lazy-load the model."""
-        if self._model is None:
-            self._model = genai.GenerativeModel(
-                model_name=self.model_name,
-                generation_config=genai.GenerationConfig(
-                    temperature=self.temperature,
-                    max_output_tokens=self.max_output_tokens,
-                ),
+    def llm(self) -> BaseChatModel:
+        """Get the underlying LLM."""
+        if self._llm is None:
+            self._llm = get_llm(
+                provider=self.provider,
+                model=self.model,
+                temperature=self.temperature,
             )
-        return self._model
+        return self._llm
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, system_prompt: str | None = None) -> str:
         """Generate a response from the model.
 
         Args:
-            prompt: The input prompt
+            prompt: The user prompt
+            system_prompt: Optional system prompt
 
         Returns:
             Generated text response
         """
-        response = self.model.generate_content(prompt)
+        messages = []
+        if system_prompt:
+            messages.append(SystemMessage(content=system_prompt))
+        messages.append(HumanMessage(content=prompt))
 
-        # Track token usage if available
-        if hasattr(response, "usage_metadata"):
+        response = self.llm.invoke(messages)
+
+        # Track usage if available
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
             self.usage.add(
-                prompt=response.usage_metadata.prompt_token_count,
-                completion=response.usage_metadata.candidates_token_count,
+                prompt=response.usage_metadata.get("input_tokens", 0),
+                completion=response.usage_metadata.get("output_tokens", 0),
             )
 
-        return response.text
+        return response.content
 
-    def generate_stream(self, prompt: str):
+    def generate_stream(
+        self, prompt: str, system_prompt: str | None = None
+    ) -> Iterator[str]:
         """Generate a streaming response.
 
         Args:
-            prompt: The input prompt
+            prompt: The user prompt
+            system_prompt: Optional system prompt
 
         Yields:
             Text chunks as they are generated
         """
-        response = self.model.generate_content(prompt, stream=True)
+        messages = []
+        if system_prompt:
+            messages.append(SystemMessage(content=system_prompt))
+        messages.append(HumanMessage(content=prompt))
 
-        for chunk in response:
-            if chunk.text:
-                yield chunk.text
+        for chunk in self.llm.stream(messages):
+            if hasattr(chunk, "content") and chunk.content:
+                yield chunk.content
 
     def get_usage_stats(self) -> dict:
         """Get token usage statistics."""
@@ -118,6 +245,10 @@ class GeminiClient:
         }
 
 
-def get_gemini_client() -> GeminiClient:
-    """Get the default Gemini client."""
-    return GeminiClient()
+# Backward compatibility
+GeminiClient = LLMClient
+
+
+def get_gemini_client() -> LLMClient:
+    """Get an LLM client (backward compatibility)."""
+    return LLMClient()

@@ -1,31 +1,35 @@
 """
 Agents Module - LLM-powered code understanding.
 
-This module handles:
-- Gemini API integration
-- RAG-based code Q&A
-- Conversation memory
-- Response generation with citations
-
-Why an "agent" instead of just prompts?
-- Agents can retrieve relevant context before answering
-- They maintain conversation state for follow-ups
-- They can use tools (search, filter) to find information
+This module provides:
+- LLMClient: Provider-agnostic LLM wrapper (Gemini, Ollama, Anthropic, OpenAI)
+- CodeNavigator: RAG agent combining retrieval + LLM
 
 Usage:
     >>> from code_navigator.agents import CodeNavigator
-    >>> nav = CodeNavigator()
-    >>> answer = nav.ask("What does the parse_file method do?")
+    >>> navigator = CodeNavigator()
+    >>> answer = navigator.ask("What does this function do?")
 """
 
-from .llm import GeminiClient, TokenUsage, get_gemini_client
+from .llm import LLMClient, TokenUsage, get_llm
 from .navigator import CodeNavigator, Message, get_code_navigator
+
+# Backward compatibility
+GeminiClient = LLMClient
+
+
+def get_gemini_client() -> LLMClient:
+    """Backward compatibility wrapper."""
+    return LLMClient()
+
 
 __all__ = [
     # LLM
-    "GeminiClient",
+    "LLMClient",
+    "GeminiClient",  # Backward compat
     "TokenUsage",
-    "get_gemini_client",
+    "get_llm",
+    "get_gemini_client",  # Backward compat
     # Navigator
     "CodeNavigator",
     "Message",

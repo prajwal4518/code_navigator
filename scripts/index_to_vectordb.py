@@ -4,6 +4,7 @@ CLI script to index a repository into the vector store.
 
 Usage:
     python scripts/index_to_vectordb.py ./path/to/repo
+    python scripts/index_to_vectordb.py --url https://github.com/user/repo
     python scripts/index_to_vectordb.py ./path/to/repo --reset
     python scripts/index_to_vectordb.py ./path/to/repo --search "parse code"
 
@@ -23,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from rich.console import Console
 from rich.table import Table
 
-from code_navigator.ingestion import CodeChunker, Language
+from code_navigator.ingestion import CodeChunker, Language, RepoManager
 from code_navigator.vectorstore import VectorStore
 
 console = Console()
@@ -36,13 +37,25 @@ def main():
         epilog="""
 Examples:
   python scripts/index_to_vectordb.py ./my-repo
+  python scripts/index_to_vectordb.py --url https://github.com/pallets/flask
   python scripts/index_to_vectordb.py ./src --reset
   python scripts/index_to_vectordb.py ./api --search "authentication"
         """,
     )
     parser.add_argument(
         "repo_path",
+        nargs="?",
         help="Path to the repository or directory to index",
+    )
+    parser.add_argument(
+        "--url",
+        "-u",
+        help="Git repository URL to clone and index",
+    )
+    parser.add_argument(
+        "--branch",
+        "-b",
+        help="Branch to clone (default: default branch)",
     )
     parser.add_argument(
         "--language",
@@ -69,21 +82,42 @@ Examples:
 
     args = parser.parse_args()
 
-    # Validate repo path
-    repo_path = Path(args.repo_path).resolve()
-    if not repo_path.exists():
-        console.print(f"[red]Error:[/] Path not found: {repo_path}")
+    # Validate inputs - need either repo_path or url
+    if not args.repo_path and not args.url:
+        console.print("[red]Error:[/] Either repo_path or --url is required")
+        parser.print_help()
         sys.exit(1)
+
+    # Handle git URL
+    if args.url:
+        console.print()
+        console.print("[bold blue]🔍 Code Navigator - Vector Store Indexer[/]")
+        console.print()
+
+        repo_manager = RepoManager()
+        try:
+            repo_path = repo_manager.clone_or_update(
+                args.url, branch=args.branch, verbose=not args.quiet
+            )
+        except RuntimeError as e:
+            console.print(f"[red]Error:[/] {e}")
+            sys.exit(1)
+    else:
+        # Use local path
+        repo_path = Path(args.repo_path).resolve()
+        if not repo_path.exists():
+            console.print(f"[red]Error:[/] Path not found: {repo_path}")
+            sys.exit(1)
+
+        console.print()
+        console.print("[bold blue]🔍 Code Navigator - Vector Store Indexer[/]")
+
+    console.print()
 
     # Parse language filter
     languages = None
     if args.language:
         languages = [Language(args.language)]
-
-    # Print header
-    console.print()
-    console.print("[bold blue]🔍 Code Navigator - Vector Store Indexer[/]")
-    console.print()
 
     # Initialize components
     chunker = CodeChunker(verbose=not args.quiet)

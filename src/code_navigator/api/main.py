@@ -29,6 +29,8 @@ from .schemas import (
     ChatResponse,
     ErrorResponse,
     HealthResponse,
+    IndexRequest,
+    IndexResponse,
     SourceReference,
     StatsResponse,
 )
@@ -216,3 +218,51 @@ async def get_stats() -> StatsResponse:
         completion_tokens=usage["completion_tokens"],
         index_size=index_size,
     )
+
+
+@app.post(
+    "/api/index",
+    response_model=IndexResponse,
+    responses={500: {"model": ErrorResponse}},
+)
+async def index_repo(request: IndexRequest) -> IndexResponse:
+    """Index a remote Git repository.
+
+    Clones (or updates) the repo and indexes it into the vector store.
+    """
+    global navigator
+
+    logger.info(f"Indexing repository: {request.url}")
+
+    try:
+        from code_navigator.ingestion import CodeChunker, RepoManager
+        from code_navigator.vectorstore import VectorStore
+
+        # Clone or update the repo
+        repo_manager = RepoManager()
+        repo_path = repo_manager.clone_or_update(request.url, branch=request.branch)
+
+        # Initialize indexing
+        chunker = CodeChunker(verbose=False)
+        store = VectorStore()
+
+        # Clear if requested
+        if request.reset:
+            store.clear()
+
+        # Chunk and index
+        chunks = chunker.chunk_repository(repo_path)
+        store.add_chunks(chunks)
+
+        # Reinitialize navigator with new data
+        navigator = CodeNavigator()
+
+        return IndexResponse(
+            status="success",
+            repo_path=str(repo_path),
+            chunks_indexed=len(chunks),
+        )
+
+    except Exception as e:
+        logger.error(f"Error indexing repository: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e

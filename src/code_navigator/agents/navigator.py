@@ -3,14 +3,14 @@ CodeNavigator RAG Agent.
 
 This is the core agent that combines:
 - Hybrid retrieval (semantic + keyword)
-- Gemini LLM for synthesis
+- LLM for synthesis (provider-agnostic via LangChain)
 - Conversation memory for context
 
 The RAG pipeline:
 1. User asks a question about code
 2. Retriever finds relevant code chunks
 3. Chunks are formatted as context
-4. Gemini generates an answer with citations
+4. LLM generates an answer with citations
 """
 
 from dataclasses import dataclass, field
@@ -19,7 +19,7 @@ from rich.console import Console
 
 from code_navigator.retrieval import HybridRetriever, SearchMode, SearchResult
 
-from .llm import GeminiClient, get_gemini_client
+from .llm import LLMClient
 
 console = Console()
 
@@ -56,7 +56,7 @@ class CodeNavigator:
     """
 
     retriever: HybridRetriever | None = None
-    llm: GeminiClient | None = None
+    llm: LLMClient | None = None
     history: list[Message] = field(default_factory=list)
     max_history: int = 10  # Keep last N exchanges
     num_chunks: int = 5  # Number of chunks to retrieve
@@ -66,7 +66,7 @@ class CodeNavigator:
         if self.retriever is None:
             self.retriever = HybridRetriever()
         if self.llm is None:
-            self.llm = get_gemini_client()
+            self.llm = LLMClient()
 
     def _format_context(self, results: list[SearchResult]) -> str:
         """Format retrieved chunks as context for the LLM.

@@ -29,6 +29,7 @@ from .models import (
     Language,
 )
 from .parser import PythonParser
+from .repo_manager import RepoManager, get_repo_manager
 
 __all__ = [
     # Models
@@ -45,4 +46,7 @@ __all__ = [
     # Chunker
     "CodeChunker",
     "chunk_repository",
+    # Repo Manager
+    "RepoManager",
+    "get_repo_manager",
 ]
